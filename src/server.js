@@ -6,6 +6,7 @@ const { URL } = require('node:url');
 const gpio = require('./gpio');
 const { McpServer, ToolError } = require('./mcpServer');
 const { MotorController, MotorControllerError, MAX_DURATION } = require('./motorController');
+const { startTunnel } = require('./tunnel');
 
 const APP_NAME = 'gpt-car-controller';
 const APP_VERSION = '1.0.0';
@@ -184,12 +185,32 @@ function inferBaseUrl(req, url) {
 async function main(args) {
   const options = parseArgs(args);
   const server = createHttpServer({ manifestRoute: MANIFEST_ROUTE, rpcRoute: MCP_ROUTE });
-  server.listen(options.port, options.host, () => {
+  let tunnelController = null;
+
+  server.listen(options.port, options.host, async () => {
     console.log(`Server listening on http://${options.host}:${options.port}`);
+
+    try {
+      tunnelController = await startTunnel({ port: options.port, logger: console });
+      if (tunnelController && tunnelController.url) {
+        console.log(`Public URL: ${tunnelController.url}`);
+      } else if (process.env.GPT_CAR_DISABLE_TUNNEL === '1') {
+        console.log('Public tunnel disabled by GPT_CAR_DISABLE_TUNNEL=1');
+      }
+    } catch (error) {
+      console.error('Failed to establish public tunnel', error);
+    }
   });
 
   const shutdown = async () => {
     server.close();
+    if (tunnelController && typeof tunnelController.close === 'function') {
+      try {
+        await tunnelController.close();
+      } catch (error) {
+        console.error('Error while closing tunnel', error);
+      }
+    }
     await controller.cleanup();
     process.exit(0);
   };
