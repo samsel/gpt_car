@@ -1,11 +1,14 @@
 {
   "name": "gpt_car",
   "version": "1.0.0",
-  "description": "Combined HTTP and MCP server for the GPT car controller.",
-  "main": "src/server.js",
+  "description": "Minimal MCP server for the GPT car controller.",
+  "main": "dist/mcpServer.js",
+  "type": "module",
   "scripts": {
-    "start": "node src/server.js",
-    "test": "node --test"
+    "build": "tsc",
+    "start": "npm run build && node dist/mcpServer.js",
+    "dev": "ts-node --esm src/mcpServer.ts",
+    "test": "npm run build"
   },
   "keywords": [
     "mcp",
@@ -14,12 +17,18 @@
   ],
   "author": "",
   "license": "MIT",
-  "type": "commonjs",
+  "engines": {
+    "node": ">=18.17.0 <19"
+  },
   "dependencies": {
-    "ajv": "^8.12.0",
-    "async-mutex": "^0.4.0",
-    "express": "^4.19.2",
-    "json-rpc-2.0": "^1.7.0",
-    "localtunnel": "^2.0.2"
+    "@modelcontextprotocol/sdk": "^1.20.1",
+    "localtunnel": "^2.0.2",
+    "onoff": "^6.0.3"
+  },
+  "devDependencies": {
+    "@types/localtunnel": "^2.0.4",
+    "@types/node": "^22.7.4",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.4"
   }
 }
