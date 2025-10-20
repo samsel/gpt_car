@@ -80,7 +80,7 @@ Keep tools concise; let agents implement higher-level logic.
 
 ## Security Considerations
 
-- Expose the tunnel only when needed and rotate URLs regularly.
+- Expose the ngrok tunnel only when needed and rotate URLs regularly.
 - Restrict agent usage to trusted users—nothing prevents malicious sequences besides your agent logic.
 - Consider adding authentication in front of the MCP server if running unattended.
 

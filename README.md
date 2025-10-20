@@ -6,7 +6,7 @@ This project exposes a tiny Model Context Protocol (MCP) server that controls a 
 
 - **MCP SDK integration** – built on top of `@modelcontextprotocol/sdk` and the Streamable HTTP transport.
 - **Simple motor control** – wraps GPIO via `onoff`, with a noop fallback for development.
-- **Public tunneling** – optionally opens a `localtunnel` to reach the MCP endpoint from the internet.
+- **Public tunneling** – optionally opens an `ngrok` tunnel to reach the MCP endpoint from the internet.
 - **TypeScript codebase** – strongly typed server, controller, and GPIO helpers.
 
 ## Project Structure
@@ -38,12 +38,14 @@ npm install
 npm start
 ```
 
-The command compiles TypeScript and launches the MCP server on port `8001` (configurable via `PORT`). When tunneling is enabled (the default), you should see output similar to:
+The command compiles TypeScript and launches the MCP server on port `8001` (configurable via `PORT`). When an ngrok token is provided, you should see output similar to:
 
 ```
 MCP server listening on http://0.0.0.0:8001/mcp
-Public URL: https://example-tunnel.loca.lt
+Public URL: https://<random>.ngrok.io
 ```
+
+To enable tunneling, provide an ngrok auth token via `GPT_CAR_NGROK_TOKEN` (or `NGROK_AUTHTOKEN`). Region, subdomain, and custom domain can be set with the additional environment variables listed below. If no token is supplied, the server skips tunnel creation and logs a reminder.
 
 ## Manifest Endpoints
 
@@ -58,10 +60,12 @@ Both routes return the server manifest so clients like ChatGPT can auto-discover
 |-----------------------------|--------------------------------------------------|
 | `PORT`                      | HTTP port (default `8001`)                       |
 | `HOST`                      | Bind host (default `0.0.0.0`)                    |
-| `GPT_CAR_DISABLE_TUNNEL`    | Set to `1` to disable localtunnel                |
-| `GPT_CAR_TUNNEL_SERVICE`    | Optional custom localtunnel host                 |
-| `GPT_CAR_TUNNEL_LOCALHOST`  | Override local host for tunnel                   |
-| `GPT_CAR_TUNNEL_SUBDOMAIN`  | Request a specific localtunnel subdomain         |
+| `GPT_CAR_DISABLE_TUNNEL`    | Set to `1` to disable ngrok entirely              |
+| `GPT_CAR_NGROK_TOKEN`       | ngrok auth token (alias of `NGROK_AUTHTOKEN`)     |
+| `NGROK_AUTHTOKEN`           | Standard ngrok auth token environment variable    |
+| `GPT_CAR_NGROK_REGION`      | Optional ngrok region (e.g., `us`, `eu`)          |
+| `GPT_CAR_NGROK_SUBDOMAIN`   | Request a specific ngrok subdomain (paid plans)   |
+| `GPT_CAR_NGROK_DOMAIN`      | Request a custom domain/hostname (paid plans)     |
 
 ## Development Tips
 
