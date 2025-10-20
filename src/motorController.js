@@ -1,5 +1,7 @@
 'use strict';
 
+const { Mutex } = require('async-mutex');
+
 const DEFAULT_DRIVE_DURATION = 2.0;
 const DEFAULT_TURN_DURATION = 1.0;
 const MAX_DURATION = 5.0;
@@ -12,19 +14,6 @@ class MotorControllerError extends Error {
   }
 }
 
-class AsyncLock {
-  constructor() {
-    this._tail = Promise.resolve();
-  }
-
-  async run(fn) {
-    const release = () => {};
-    const current = this._tail.then(() => fn());
-    this._tail = current.catch(() => undefined);
-    return current;
-  }
-}
-
 class MotorController {
   constructor(gpio, pins, options = {}) {
     this._gpio = gpio;
@@ -33,7 +22,7 @@ class MotorController {
     this._turnDuration = options.turnDuration ?? DEFAULT_TURN_DURATION;
     this._maxDuration = options.maxDuration ?? MAX_DURATION;
     this._sleep = options.sleep ?? ((seconds) => new Promise((resolve) => setTimeout(resolve, Math.round(seconds * 1000))));
-    this._lock = new AsyncLock();
+    this._mutex = new Mutex();
     this._cleaned = false;
 
     this._gpio.setwarnings(false);
@@ -45,7 +34,7 @@ class MotorController {
   }
 
   async cleanup() {
-    return this._lock.run(async () => {
+    return this._withLock(async () => {
       if (this._cleaned) {
         return;
       }
@@ -58,7 +47,7 @@ class MotorController {
   }
 
   async stop() {
-    return this._lock.run(async () => {
+    return this._withLock(async () => {
       this._ensureActive();
       this._stopLocked();
       return { message: 'Motors stopped' };
@@ -118,7 +107,7 @@ class MotorController {
 
   async _runWithDuration(pins, requestedDuration, defaultDuration) {
     const duration = this._normalizeDuration(requestedDuration, defaultDuration);
-    return this._lock.run(async () => {
+    return this._withLock(async () => {
       this._ensureActive();
       const [forwardPin, backwardPin] = pins;
       this._gpio.output(forwardPin, this._gpio.HIGH);
@@ -127,6 +116,10 @@ class MotorController {
       this._stopLocked();
       return duration;
     });
+  }
+
+  async _withLock(fn) {
+    return this._mutex.runExclusive(fn);
   }
 
   _stopLocked() {
