@@ -205,7 +205,7 @@ async function main(args) {
 }
 
 function parseArgs(argv = process.argv.slice(2)) {
-  const options = { host: '0.0.0.0', port: 5000 };
+  const options = { host: '0.0.0.0', port: 8001 };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === '--host' && i + 1 < argv.length) {
