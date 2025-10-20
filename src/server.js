@@ -1,7 +1,8 @@
 'use strict';
 
 const http = require('node:http');
-const { URL } = require('node:url');
+const express = require('express');
+const Ajv = require('ajv');
 
 const gpio = require('./gpio');
 const { McpServer, ToolError } = require('./mcpServer');
@@ -25,16 +26,23 @@ const DRIVE_TOOL_INPUT_SCHEMA = {
       description: 'Direction or STOP.',
     },
     duration: {
-      type: ['number', 'null'],
-      minimum: 0,
-      exclusiveMinimum: true,
-      maximum: MAX_DURATION,
+      anyOf: [
+        {
+          type: 'number',
+          exclusiveMinimum: 0,
+          maximum: MAX_DURATION,
+        },
+        { type: 'null' },
+      ],
       description: 'Optional duration in seconds.',
     },
   },
   required: ['cmd'],
   additionalProperties: false,
 };
+
+const ajv = new Ajv({ removeAdditional: true, coerceTypes: true });
+const validateDriveCommand = ajv.compile(DRIVE_TOOL_INPUT_SCHEMA);
 
 const mcpServer = new McpServer({ name: APP_NAME, version: APP_VERSION });
 mcpServer.registerTool(
@@ -61,53 +69,44 @@ mcpServer.registerTool(
   }
 );
 
-function createHttpServer({
+function createExpressApp({
   controllerInstance = controller,
   mcp = mcpServer,
   manifestRoute = MANIFEST_ROUTE,
   rpcRoute = MCP_ROUTE,
 } = {}) {
-  return http.createServer(async (req, res) => {
-    try {
-      await handleRequest({ req, res, controllerInstance, mcp, manifestRoute, rpcRoute });
-    } catch (error) {
-      console.error('Unhandled server error', error);
-      respondJson(res, 500, { status: 'error', message: 'Internal server error' });
-    }
-  });
-}
+  const app = express();
 
-async function handleRequest({ req, res, controllerInstance, mcp, manifestRoute, rpcRoute }) {
-  const { method, url: rawUrl = '/' } = req;
-  const url = new URL(rawUrl, `http://${req.headers.host || 'localhost'}`);
+  app.use(express.json());
 
-  if (method === 'GET' && url.pathname === manifestRoute) {
-    const baseUrl = inferBaseUrl(req, url);
-    const manifest = mcp.manifest(baseUrl, rpcRoute);
-    return respondJson(res, 200, manifest);
-  }
-
-  if (method === 'POST' && url.pathname === '/command') {
-    if (!isJsonRequest(req)) {
-      return respondJson(res, 400, {
-        status: 'error',
-        message: 'JSON payload required',
-      });
-    }
-    let payload;
-    try {
-      payload = await readJson(req);
-    } catch (error) {
+  app.use((error, req, res, next) => {
+    if (error instanceof SyntaxError) {
       return respondJson(res, 400, {
         status: 'error',
         message: 'Invalid JSON payload',
       });
     }
-    const cmd = payload && payload.cmd;
-    const duration = payload ? payload.duration : undefined;
+    return next(error);
+  });
+
+  app.get(manifestRoute, (req, res) => {
+    const baseUrl = inferBaseUrl(req);
+    const manifest = mcp.manifest(baseUrl, rpcRoute);
+    respondJson(res, 200, manifest);
+  });
+
+  app.post('/command', requireJson, async (req, res, next) => {
     try {
+      if (!validateDriveCommand(req.body)) {
+        return respondJson(res, 400, {
+          status: 'error',
+          message: 'Invalid command payload',
+          errors: validateDriveCommand.errors,
+        });
+      }
+      const { cmd, duration = null } = req.body;
       const result = await controllerInstance.execute(cmd, { duration });
-      return respondJson(res, 200, { status: 'ok', ...result });
+      respondJson(res, 200, { status: 'ok', ...result });
     } catch (error) {
       if (error instanceof MotorControllerError) {
         return respondJson(res, error.statusCode || 400, {
@@ -115,67 +114,53 @@ async function handleRequest({ req, res, controllerInstance, mcp, manifestRoute,
           message: error.message,
         });
       }
-      throw error;
+      return next(error);
     }
-  }
+  });
 
-  if (method === 'POST' && url.pathname === rpcRoute) {
-    if (!isJsonRequest(req)) {
-      return respondJson(res, 400, {
-        status: 'error',
-        message: 'JSON payload required',
-      });
-    }
-    let payload;
+  app.post(rpcRoute, requireJson, async (req, res, next) => {
     try {
-      payload = await readJson(req);
+      const response = await mcp.handleJsonRpc(req.body);
+      respondJson(res, 200, response ?? {});
     } catch (error) {
-      return respondJson(res, 400, {
-        status: 'error',
-        message: 'Invalid JSON payload',
-      });
+      return next(error);
     }
-    const response = await mcp.handleJsonRpc(payload);
-    return respondJson(res, 200, response ?? {});
-  }
+  });
 
-  res.statusCode = 404;
-  res.setHeader('Content-Type', 'application/json');
-  res.end(JSON.stringify({ status: 'error', message: 'Not found' }));
+  app.use((req, res) => {
+    respondJson(res, 404, { status: 'error', message: 'Not found' });
+  });
+
+  app.use((error, req, res, next) => { // eslint-disable-line no-unused-vars
+    console.error('Unhandled server error', error);
+    respondJson(res, 500, { status: 'error', message: 'Internal server error' });
+  });
+
+  return app;
 }
 
-function isJsonRequest(req) {
-  const contentType = req.headers['content-type'];
-  return typeof contentType === 'string' && contentType.includes('application/json');
+function createHttpServer(options = {}) {
+  const app = createExpressApp(options);
+  return http.createServer(app);
+}
+
+function requireJson(req, res, next) {
+  if (!req.is('application/json')) {
+    return respondJson(res, 400, {
+      status: 'error',
+      message: 'JSON payload required',
+    });
+  }
+  return next();
 }
 
 function respondJson(res, statusCode, payload) {
-  res.statusCode = statusCode;
-  res.setHeader('Content-Type', 'application/json');
-  res.end(JSON.stringify(payload));
+  res.status(statusCode).json(payload);
 }
 
-function readJson(req) {
-  return new Promise((resolve, reject) => {
-    let body = '';
-    req.setEncoding('utf8');
-    req.on('data', (chunk) => {
-      body += chunk;
-    });
-    req.on('end', () => {
-      try {
-        resolve(body ? JSON.parse(body) : {});
-      } catch (error) {
-        reject(error);
-      }
-    });
-    req.on('error', reject);
-  });
-}
-
-function inferBaseUrl(req, url) {
-  const proto = req.headers['x-forwarded-proto'] || 'http';
-  const host = req.headers.host || `${url.hostname}:${url.port}`;
+function inferBaseUrl(req) {
+  const proto = req.get('x-forwarded-proto') || req.protocol || 'http';
+  const host = req.get('host');
   if (!host) {
     return 'http://localhost';
   }
@@ -251,6 +236,7 @@ module.exports = {
   MCP_ROUTE,
   PINS,
   controller,
+  createExpressApp,
   createHttpServer,
   DRIVE_TOOL_INPUT_SCHEMA,
   mcpServer,
