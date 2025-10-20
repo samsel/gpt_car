@@ -1,0 +1,18 @@
+{
+  "name": "gpt_car",
+  "version": "1.0.0",
+  "description": "Combined HTTP and MCP server for the GPT car controller.",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test"
+  },
+  "keywords": [
+    "mcp",
+    "motor",
+    "controller"
+  ],
+  "author": "",
+  "license": "MIT",
+  "type": "commonjs"
+}
