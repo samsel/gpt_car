@@ -6,7 +6,7 @@ This project exposes a tiny Model Context Protocol (MCP) server that controls a 
 
 - **MCP SDK integration** – built on top of `@modelcontextprotocol/sdk` and the Streamable HTTP transport.
 - **Simple motor control** – wraps GPIO via `onoff`, with a noop fallback for development.
-- **Public tunneling** – optionally opens an `ngrok` tunnel to reach the MCP endpoint from the internet.
+- **Public tunneling** – automatically opens an HTTPS tunnel (via LocalTunnel by default) so the MCP endpoint is reachable from the internet.
 - **TypeScript codebase** – strongly typed server, controller, and GPIO helpers.
 
 ## Project Structure
@@ -21,7 +21,7 @@ dist/                // Compiled JavaScript output
 
 ## Prerequisites
 
-- Node.js **18.x** (see `.nvmrc` for the recommended version).
+- Node.js **18.19.x** (or newer 18.x releases; see `.nvmrc` for the recommended version).
 - npm 9 or higher.
 - Optional: Raspberry Pi or similar hardware with accessible GPIO pins.
 
@@ -40,14 +40,15 @@ npm install pigpio --omit=dev --no-save
 npm start
 ```
 
-The command compiles TypeScript and launches the MCP server on port `8001` (configurable via `PORT`). When an ngrok token is provided, you should see output similar to:
+The command compiles TypeScript and launches the MCP server on port `8001` (configurable via `PORT`). By default the server establishes a [LocalTunnel](https://github.com/localtunnel/localtunnel) HTTPS endpoint so remote MCP clients can connect immediately. Successful startup looks like:
 
 ```
 MCP server listening on http://0.0.0.0:8001/mcp
-Public URL: https://<random>.ngrok.io
+Tunnel ready via localtunnel: https://<random>.loca.lt
+Public URL (localtunnel): https://<random>.loca.lt
 ```
 
-To enable tunneling, provide an ngrok auth token via `GPT_CAR_NGROK_TOKEN` (or `NGROK_AUTHTOKEN`). Region, subdomain, and custom domain can be set with the additional environment variables listed below. If no token is supplied, the server skips tunnel creation and logs a reminder.
+Set `GPT_CAR_DISABLE_TUNNEL=1` to opt out of tunneling (for fully offline installs). To switch to ngrok, export `GPT_CAR_TUNNEL_PROVIDER=ngrok` and provide an auth token via `GPT_CAR_NGROK_TOKEN` (or `NGROK_AUTHTOKEN`). Region, subdomain, and custom domain can be set with the additional environment variables listed below. If every provider fails, the server will continue running locally and print diagnostics so you can adjust the configuration.
 
 ## Manifest Endpoints
 
@@ -62,7 +63,10 @@ Both routes return the server manifest so clients like ChatGPT can auto-discover
 |-----------------------------|--------------------------------------------------|
 | `PORT`                      | HTTP port (default `8001`)                       |
 | `HOST`                      | Bind host (default `0.0.0.0`)                    |
-| `GPT_CAR_DISABLE_TUNNEL`    | Set to `1` to disable ngrok entirely              |
+| `GPT_CAR_DISABLE_TUNNEL`    | Set to `1` to disable tunnel creation entirely     |
+| `GPT_CAR_TUNNEL_PROVIDER`   | `localtunnel` (default) or `ngrok`                |
+| `GPT_CAR_LOCALTUNNEL_SUBDOMAIN` / `GPT_CAR_LT_SUBDOMAIN` | Request a specific LocalTunnel subdomain (best effort) |
+| `GPT_CAR_LOCALTUNNEL_HOST`  | Override the LocalTunnel service host             |
 | `GPT_CAR_NGROK_TOKEN`       | ngrok auth token (alias of `NGROK_AUTHTOKEN`)     |
 | `NGROK_AUTHTOKEN`           | Standard ngrok auth token environment variable    |
 | `GPT_CAR_NGROK_REGION`      | Optional ngrok region (e.g., `us`, `eu`)          |
@@ -111,7 +115,7 @@ The server automatically caps tool input validation to the configured `GPT_CAR_M
 ## Troubleshooting
 
 - Ensure Node 18.x is active; other versions may not satisfy `onoff`.
-- If tunneling fails, set `GPT_CAR_DISABLE_TUNNEL=1` or verify your network permits outgoing WebSocket connections.
+- If tunneling fails, review the startup logs for provider-specific errors, adjust the environment variables above, or set `GPT_CAR_DISABLE_TUNNEL=1` to run the server locally.
 - When running on a Raspberry Pi, confirm the process has permission to access GPIO (often requires root or membership in the `gpio` group).
 - A startup warning such as `pigpio module not installed` means the high-performance backend was skipped; install it with
   `npm install pigpio --omit=dev --no-save` for better responsiveness.
