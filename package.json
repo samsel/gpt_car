@@ -18,11 +18,10 @@
   "author": "",
   "license": "MIT",
   "engines": {
-    "node": ">=18.17.0 <19"
+    "node": ">=18.17.0"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.20.1",
-    "ngrok": "^4.3.3",
     "onoff": "^6.0.3"
   },
   "devDependencies": {
@@ -30,5 +29,8 @@
     "@types/node": "^22.7.4",
     "ts-node": "^10.9.2",
     "typescript": "^5.5.4"
+  },
+  "optionalDependencies": {
+    "ngrok": "^4.3.3"
   }
 }
