@@ -1,7 +1,7 @@
 import http, { IncomingMessage, ServerResponse } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { URL, fileURLToPath } from 'node:url';
-import ngrok from 'ngrok';
+import { createRequire } from 'node:module';
 import type { ConnectOptions as NgrokConnectOptions } from 'ngrok';
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -12,9 +12,13 @@ import {
   MAX_DURATION,
   MotorController,
   MotorControllerError,
+  type MotorPins,
+  type MotorControllerOptions,
   type MotorCommand,
 } from './motorController.js';
 import { createGpio } from './gpio.js';
+
+const require = createRequire(import.meta.url);
 
 const APP_NAME = 'gpt-car-mcp-server';
 const APP_VERSION = '1.0.0';
@@ -22,15 +26,20 @@ const MANIFEST_ROUTE = '/.well-known/mcp/manifest.json';
 const ALT_MANIFEST_ROUTE = '/.well-known/manifest.json';
 const MCP_ROUTE = '/mcp';
 
-const DriveInputSchema = z.object({
-  cmd: z.enum(['FORWARD', 'BACKWARD', 'LEFT', 'RIGHT', 'STOP']).describe('Direction command or STOP.'),
-  duration: z
-    .number()
-    .positive()
-    .max(MAX_DURATION)
-    .optional()
-    .describe('Optional duration in seconds, capped to the controller limit.'),
-});
+const DRIVE_COMMANDS = ['FORWARD', 'BACKWARD', 'LEFT', 'RIGHT', 'STOP'] as const;
+
+const createDriveInputSchema = (maxDuration: number) =>
+  z.object({
+    cmd: z.enum(DRIVE_COMMANDS).describe('Direction command or STOP.'),
+    duration: z
+      .number({ invalid_type_error: 'Duration must be a number' })
+      .positive()
+      .max(maxDuration)
+      .nullish()
+      .describe('Optional duration in seconds, capped to the controller limit.'),
+  });
+
+const DriveInputSchema = createDriveInputSchema(MAX_DURATION);
 
 type DriveInput = z.infer<typeof DriveInputSchema>;
 
@@ -50,7 +59,7 @@ function driveResultToText(command: MotorCommand, duration: number): string {
   return `${command} executed for ${duration.toFixed(2)} seconds.`;
 }
 
-function createManifest(baseUrl: string) {
+function createManifest(baseUrl: string, maxDuration: number) {
   return {
     id: APP_NAME,
     version: APP_VERSION,
@@ -71,7 +80,7 @@ function createManifest(baseUrl: string) {
             },
             duration: {
               anyOf: [
-                { type: 'number', exclusiveMinimum: 0, maximum: MAX_DURATION },
+                { type: 'number', exclusiveMinimum: 0, maximum: maxDuration },
                 { type: 'null' },
               ],
               description: 'Optional duration in seconds.',
@@ -83,6 +92,79 @@ function createManifest(baseUrl: string) {
       },
     ],
   };
+}
+
+function parsePinEnv(name: string): number | undefined {
+  const raw = process.env[name];
+  if (!raw) {
+    return undefined;
+  }
+
+  const value = Number.parseInt(raw, 10);
+  if (!Number.isInteger(value)) {
+    console.warn(`Ignoring ${name}: expected an integer BCM pin number, received "${raw}".`);
+    return undefined;
+  }
+  if (value < 0) {
+    console.warn(`${name} must be non-negative. Received ${value}.`);
+    return undefined;
+  }
+  return value;
+}
+
+function parseDurationEnv(name: string, max?: number): number | undefined {
+  const raw = process.env[name];
+  if (!raw) {
+    return undefined;
+  }
+
+  const value = Number(raw);
+  if (!Number.isFinite(value)) {
+    console.warn(`Ignoring ${name}: expected a numeric duration, received "${raw}".`);
+    return undefined;
+  }
+  if (value <= 0) {
+    console.warn(`${name} must be greater than zero. Received ${value}.`);
+    return undefined;
+  }
+  if (typeof max === 'number' && value > max) {
+    console.warn(`${name} must be <= ${max}. Received ${value}.`);
+    return undefined;
+  }
+  return value;
+}
+
+function resolveMotorConfiguration(): {
+  pins: MotorPins;
+  options: MotorControllerOptions;
+  maxDuration: number;
+} {
+  const pins: MotorPins = {
+    forward: parsePinEnv('GPT_CAR_PIN_FORWARD') ?? DEFAULT_PINS.forward,
+    backward: parsePinEnv('GPT_CAR_PIN_BACKWARD') ?? DEFAULT_PINS.backward,
+    left: parsePinEnv('GPT_CAR_PIN_LEFT') ?? DEFAULT_PINS.left,
+    right: parsePinEnv('GPT_CAR_PIN_RIGHT') ?? DEFAULT_PINS.right,
+  };
+
+  const maxDurationOverride = parseDurationEnv('GPT_CAR_MAX_DURATION');
+  const maxDuration = maxDurationOverride ?? MAX_DURATION;
+
+  const options: MotorControllerOptions = {};
+  if (maxDurationOverride !== undefined) {
+    options.maxDuration = maxDuration;
+  }
+
+  const driveDuration = parseDurationEnv('GPT_CAR_DRIVE_DURATION', maxDuration);
+  if (driveDuration !== undefined) {
+    options.driveDuration = driveDuration;
+  }
+
+  const turnDuration = parseDurationEnv('GPT_CAR_TURN_DURATION', maxDuration);
+  if (turnDuration !== undefined) {
+    options.turnDuration = turnDuration;
+  }
+
+  return { pins, options, maxDuration };
 }
 
 async function readJsonBody(req: IncomingMessage): Promise<unknown> {
@@ -158,8 +240,36 @@ interface TunnelHandle {
   close: () => Promise<void>;
 }
 
+let cachedNgrok: (typeof import('ngrok')) | null | undefined;
+
+function getNgrokModule(): (typeof import('ngrok')) | null {
+  if (cachedNgrok !== undefined) {
+    return cachedNgrok;
+  }
+
+  try {
+    cachedNgrok = require('ngrok') as typeof import('ngrok');
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException;
+    if (err?.code === 'MODULE_NOT_FOUND') {
+      console.warn('ngrok package not installed; tunneling support disabled.');
+    } else {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(`Failed to load ngrok: ${message}`);
+    }
+    cachedNgrok = null;
+  }
+
+  return cachedNgrok ?? null;
+}
+
 async function startTunnel(port: number): Promise<TunnelHandle | null> {
   if (process.env.GPT_CAR_DISABLE_TUNNEL === '1') {
+    return null;
+  }
+
+  const ngrok = getNgrokModule();
+  if (!ngrok) {
     return null;
   }
 
@@ -178,8 +288,24 @@ async function startTunnel(port: number): Promise<TunnelHandle | null> {
     proto: 'http',
   };
 
-  if (process.env.GPT_CAR_NGROK_REGION) {
-    options.region = process.env.GPT_CAR_NGROK_REGION;
+  const regionEnv = process.env.GPT_CAR_NGROK_REGION;
+  if (regionEnv) {
+    const allowedRegions: ReadonlyArray<NonNullable<NgrokConnectOptions['region']>> = [
+      'us',
+      'eu',
+      'ap',
+      'au',
+      'sa',
+      'jp',
+      'in',
+    ];
+    if ((allowedRegions as readonly string[]).includes(regionEnv)) {
+      options.region = regionEnv as NonNullable<NgrokConnectOptions['region']>;
+    } else {
+      console.warn(
+        `Ignoring GPT_CAR_NGROK_REGION value "${regionEnv}": expected one of ${allowedRegions.join(', ')}.`,
+      );
+    }
   }
   if (process.env.GPT_CAR_NGROK_SUBDOMAIN) {
     options.subdomain = process.env.GPT_CAR_NGROK_SUBDOMAIN;
@@ -209,7 +335,10 @@ export async function bootstrapServer(options: ServerOptions = {}): Promise<http
   const port = options.port ?? Number(process.env.PORT ?? 8001);
 
   const gpio = createGpio();
-  const controller = new MotorController(gpio, DEFAULT_PINS);
+  const { pins, options: controllerOptions, maxDuration } = resolveMotorConfiguration();
+  const controller = new MotorController(gpio, pins, controllerOptions);
+  const driveInputSchema = createDriveInputSchema(maxDuration);
+  type DriveToolInput = z.infer<typeof driveInputSchema>;
 
   const mcp = new McpServer(
     {
@@ -229,9 +358,9 @@ export async function bootstrapServer(options: ServerOptions = {}): Promise<http
     {
       title: 'Drive the car',
       description: 'Drive the car forward, backward, left, right or stop.',
-      inputSchema: DriveInputSchema.shape,
+      inputSchema: driveInputSchema.shape,
     },
-    async ({ cmd, duration }: DriveInput) => {
+    async ({ cmd, duration }: DriveToolInput) => {
       try {
         const result = await controller.drive(cmd, { duration: duration ?? null });
         return {
@@ -267,7 +396,7 @@ export async function bootstrapServer(options: ServerOptions = {}): Promise<http
   await mcp.connect(transport);
 
   const server = http.createServer(async (req, res) => {
-    const manifest = () => createManifest(inferBaseUrl(req));
+    const manifest = () => createManifest(inferBaseUrl(req), maxDuration);
     await handleRequest(req, res, transport, manifest);
   });
 
@@ -329,4 +458,5 @@ export {
   ALT_MANIFEST_ROUTE,
   MCP_ROUTE,
   DriveInputSchema,
+  createDriveInputSchema,
 };

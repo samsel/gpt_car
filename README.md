@@ -30,6 +30,8 @@ dist/                // Compiled JavaScript output
 ```bash
 nvm use 18.20.3        # or install via nvm install 18.20.3
 npm install
+# On Raspberry Pi, install pigpio for low-latency GPIO access (no package.json changes)
+npm install pigpio --omit=dev --no-save
 ```
 
 ## Running the Server
@@ -66,6 +68,26 @@ Both routes return the server manifest so clients like ChatGPT can auto-discover
 | `GPT_CAR_NGROK_REGION`      | Optional ngrok region (e.g., `us`, `eu`)          |
 | `GPT_CAR_NGROK_SUBDOMAIN`   | Request a specific ngrok subdomain (paid plans)   |
 | `GPT_CAR_NGROK_DOMAIN`      | Request a custom domain/hostname (paid plans)     |
+| `GPT_CAR_PIN_FORWARD`       | Override the BCM pin used for forward motion      |
+| `GPT_CAR_PIN_BACKWARD`      | Override the BCM pin used for backward motion     |
+| `GPT_CAR_PIN_LEFT`          | Override the BCM pin used for left turns          |
+| `GPT_CAR_PIN_RIGHT`         | Override the BCM pin used for right turns         |
+| `GPT_CAR_DRIVE_DURATION`    | Default duration (seconds) for forward/backward   |
+| `GPT_CAR_TURN_DURATION`     | Default duration (seconds) for left/right turns   |
+| `GPT_CAR_MAX_DURATION`      | Maximum duration (seconds) allowed per command    |
+
+The server automatically caps tool input validation to the configured `GPT_CAR_MAX_DURATION` value.
+
+## Raspberry Pi Notes
+
+- The server auto-detects the best available GPIO backend. If the optional [`pigpio`](https://www.npmjs.com/package/pigpio)
+  module is installed, it is preferred for accurate timing on recent Raspberry Pi kernels that disable the legacy sysfs GPIO
+  interface. When `pigpio` is missing, it falls back to [`onoff`](https://www.npmjs.com/package/onoff), and finally to a
+  noop simulator when neither backend is available.
+- Install the OS-level daemon if necessary: `sudo apt install pigpio`.
+- Ensure the `pigpiod` daemon is running (`sudo systemctl enable --now pigpiod`) and that the process has permission to access
+  GPIO (either run under `sudo` or add the user to the `gpio` group).
+- To skip the optional ngrok binary on constrained devices, install with `npm install --omit=optional`.
 
 ## Development Tips
 
@@ -91,6 +113,8 @@ Both routes return the server manifest so clients like ChatGPT can auto-discover
 - Ensure Node 18.x is active; other versions may not satisfy `onoff`.
 - If tunneling fails, set `GPT_CAR_DISABLE_TUNNEL=1` or verify your network permits outgoing WebSocket connections.
 - When running on a Raspberry Pi, confirm the process has permission to access GPIO (often requires root or membership in the `gpio` group).
+- A startup warning such as `pigpio module not installed` means the high-performance backend was skipped; install it with
+  `npm install pigpio --omit=dev --no-save` for better responsiveness.
 
 ## License
 
