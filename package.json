@@ -18,10 +18,11 @@
   "author": "",
   "license": "MIT",
   "engines": {
-    "node": ">=18.17.0"
+    "node": ">=18.19.0"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.20.1",
+    "localtunnel": "^2.0.2",
     "onoff": "^6.0.3"
   },
   "devDependencies": {
