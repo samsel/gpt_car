@@ -22,8 +22,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.20.1",
-    "localtunnel": "^2.0.2",
-    "onoff": "^6.0.3"
+    "localtunnel": "^2.0.2"
   },
   "devDependencies": {
     "@types/localtunnel": "^2.0.4",
@@ -32,6 +31,6 @@
     "typescript": "^5.5.4"
   },
   "optionalDependencies": {
-    "ngrok": "^4.3.3"
+    "pigpio": "^3.3.1"
   }
 }
