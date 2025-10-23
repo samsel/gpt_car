@@ -1,8 +1,6 @@
 import http, { IncomingMessage, ServerResponse } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { URL, fileURLToPath } from 'node:url';
-import { createRequire } from 'node:module';
-import type { ConnectOptions as NgrokConnectOptions } from 'ngrok';
 import type { Tunnel as LocalTunnel, TunnelConfig as LocalTunnelConfig } from 'localtunnel';
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -18,8 +16,6 @@ import {
   type MotorCommand,
 } from './motorController.js';
 import { createGpio } from './gpio.js';
-
-const require = createRequire(import.meta.url);
 
 const APP_NAME = 'gpt-car-mcp-server';
 const APP_VERSION = '1.0.0';
@@ -236,95 +232,15 @@ async function handleRequest(
   res.end(JSON.stringify({ error: 'Not found' }));
 }
 
-type TunnelProvider = 'localtunnel' | 'ngrok';
-
 interface TunnelHandle {
   url: string;
   close: () => Promise<void>;
-  provider: TunnelProvider;
 }
-
-let cachedNgrok: (typeof import('ngrok')) | null | undefined;
-
-function getNgrokModule(): (typeof import('ngrok')) | null {
-  if (cachedNgrok !== undefined) {
-    return cachedNgrok;
+async function startTunnel(port: number): Promise<TunnelHandle | null> {
+  if (process.env.GPT_CAR_DISABLE_TUNNEL === '1') {
+    return null;
   }
 
-  try {
-    cachedNgrok = require('ngrok') as typeof import('ngrok');
-  } catch (error) {
-    const err = error as NodeJS.ErrnoException;
-    if (err?.code === 'MODULE_NOT_FOUND') {
-      console.warn('ngrok package not installed; will fall back to localtunnel if available.');
-    } else {
-      const message = err instanceof Error ? err.message : String(err);
-      console.warn(`Failed to load ngrok: ${message}`);
-    }
-    cachedNgrok = null;
-  }
-
-  return cachedNgrok ?? null;
-}
-
-async function startNgrokTunnel(port: number): Promise<TunnelHandle> {
-  const ngrok = getNgrokModule();
-  if (!ngrok) {
-    throw new Error('ngrok module is not available');
-  }
-
-  const token = process.env.GPT_CAR_NGROK_TOKEN ?? process.env.NGROK_AUTHTOKEN;
-  if (!token) {
-    throw new Error(
-      'ngrok requires an auth token. Set GPT_CAR_NGROK_TOKEN or NGROK_AUTHTOKEN to use this provider.',
-    );
-  }
-
-  await ngrok.authtoken(token);
-
-  const options: NgrokConnectOptions = {
-    addr: port,
-    proto: 'http',
-  };
-
-  const regionEnv = process.env.GPT_CAR_NGROK_REGION;
-  if (regionEnv) {
-    const allowedRegions: ReadonlyArray<NonNullable<NgrokConnectOptions['region']>> = [
-      'us',
-      'eu',
-      'ap',
-      'au',
-      'sa',
-      'jp',
-      'in',
-    ];
-    if ((allowedRegions as readonly string[]).includes(regionEnv)) {
-      options.region = regionEnv as NonNullable<NgrokConnectOptions['region']>;
-    } else {
-      console.warn(
-        `Ignoring GPT_CAR_NGROK_REGION value "${regionEnv}": expected one of ${allowedRegions.join(', ')}.`,
-      );
-    }
-  }
-  if (process.env.GPT_CAR_NGROK_SUBDOMAIN) {
-    options.subdomain = process.env.GPT_CAR_NGROK_SUBDOMAIN;
-  }
-  if (process.env.GPT_CAR_NGROK_DOMAIN) {
-    options.hostname = process.env.GPT_CAR_NGROK_DOMAIN;
-  }
-
-  const url = await ngrok.connect(options);
-  return {
-    url,
-    provider: 'ngrok',
-    close: async () => {
-      await ngrok.disconnect(url);
-      await ngrok.kill();
-    },
-  };
-}
-
-async function startLocalTunnel(port: number): Promise<TunnelHandle> {
   try {
     const { default: localtunnel } = await import('localtunnel');
     const config: LocalTunnelConfig & { port: number } = { port };
@@ -338,55 +254,22 @@ async function startLocalTunnel(port: number): Promise<TunnelHandle> {
     }
 
     const tunnel: LocalTunnel = await localtunnel(config);
-    const close = async () => {
-      try {
-        tunnel.close();
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        console.warn(`localtunnel close failed: ${message}`);
-      }
-    };
-
     return {
       url: tunnel.url,
-      provider: 'localtunnel',
-      close,
+      close: async () => {
+        try {
+          tunnel.close();
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          console.warn(`localtunnel close failed: ${message}`);
+        }
+      },
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Failed to start localtunnel: ${message}`);
-  }
-}
-
-async function startTunnel(port: number): Promise<TunnelHandle | null> {
-  if (process.env.GPT_CAR_DISABLE_TUNNEL === '1') {
+    console.warn(`localtunnel unavailable, continuing without public tunnel: ${message}`);
     return null;
   }
-
-  const preferredProvider = (process.env.GPT_CAR_TUNNEL_PROVIDER ?? 'localtunnel').toLowerCase();
-  const orderedProviders: TunnelProvider[] = preferredProvider === 'ngrok' ? ['ngrok', 'localtunnel'] : ['localtunnel', 'ngrok'];
-
-  const errors: string[] = [];
-
-  for (const provider of orderedProviders) {
-    try {
-      const handle = provider === 'localtunnel' ? await startLocalTunnel(port) : await startNgrokTunnel(port);
-      console.log(`Tunnel ready via ${provider}: ${handle.url}`);
-      return handle;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      errors.push(`${provider}: ${message}`);
-      continue;
-    }
-  }
-
-  if (errors.length > 0) {
-    console.warn(`All tunnel providers failed to start. Reasons: ${errors.join('; ')}`);
-  } else {
-    console.warn('No tunnel providers were attempted.');
-  }
-
-  return null;
 }
 
 export interface ServerOptions {
@@ -468,21 +351,15 @@ export async function bootstrapServer(options: ServerOptions = {}): Promise<http
 
   server.listen(port, host, async () => {
     console.log(`MCP server listening on http://${host}:${port}${MCP_ROUTE}`);
-    try {
-      tunnelHandle = await startTunnel(port);
-      if (tunnelHandle) {
-        console.log(`Public URL (${tunnelHandle.provider}): ${tunnelHandle.url}`);
-        server.on('close', () => {
-          void tunnelHandle?.close();
-          tunnelHandle = null;
-        });
-      }
-    } catch (error) {
-      const details = error instanceof Error ? error.message : String(error);
-      console.error('Failed to establish ngrok tunnel:', details);
-      console.error(
-        'Set GPT_CAR_NGROK_TOKEN (or disable tunneling with GPT_CAR_DISABLE_TUNNEL=1) if public access is not required.',
-      );
+    tunnelHandle = await startTunnel(port);
+    if (tunnelHandle) {
+      console.log(`Public URL: ${tunnelHandle.url}`);
+      server.on('close', () => {
+        void tunnelHandle?.close();
+        tunnelHandle = null;
+      });
+    } else {
+      console.warn('No tunnel active. Set GPT_CAR_DISABLE_TUNNEL=1 to silence this warning.');
     }
   });
 
