@@ -2,13 +2,10 @@
   "name": "gpt_car",
   "version": "1.0.0",
   "description": "Minimal MCP server for the GPT car controller.",
-  "main": "dist/mcpServer.js",
+  "main": "src/mcpServer.js",
   "type": "module",
   "scripts": {
-    "build": "tsc",
-    "start": "npm run build && node dist/mcpServer.js",
-    "dev": "ts-node --esm src/mcpServer.ts",
-    "test": "npm run build"
+    "start": "node src/mcpServer.js"
   },
   "keywords": [
     "mcp",
@@ -18,17 +15,10 @@
   "author": "",
   "license": "MIT",
   "engines": {
-    "node": ">=18.19.0"
+    "node": ">=18.0.0"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.20.1",
-    "localtunnel": "^2.0.2"
-  },
-  "devDependencies": {
-    "@types/localtunnel": "^2.0.4",
-    "@types/node": "^22.7.4",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.5.4"
+    "@modelcontextprotocol/sdk": "^1.20.1"
   },
   "optionalDependencies": {
     "pigpio": "^3.3.1"
