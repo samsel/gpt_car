@@ -172,6 +172,21 @@ async function readJsonBody(req) {
   }
 }
 
+function acceptsEventStream(req) {
+  const acceptHeader = req.headers.accept;
+  if (!acceptHeader) {
+    return false;
+  }
+
+  const values = Array.isArray(acceptHeader) ? acceptHeader : [acceptHeader];
+  return values.some((value) =>
+    value
+      .split(',')
+      .map((part) => part.trim().toLowerCase())
+      .some((part) => part === 'text/event-stream' || part.startsWith('text/event-stream;')),
+  );
+}
+
 async function handleRequest(req, res, transport, manifestResponder) {
   if (!req.url) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -180,23 +195,75 @@ async function handleRequest(req, res, transport, manifestResponder) {
   }
 
   const url = new URL(req.url, 'http://localhost');
+  const isRootPath = url.pathname === '/' || url.pathname === '';
+  const wantsEventStream = acceptsEventStream(req);
+
+  if (isRootPath && req.method === 'GET' && wantsEventStream && typeof transport.stream === 'function') {
+    await transport.stream(req, res);
+    return;
+  }
+
+  if (isRootPath && req.method === 'GET') {
+    const baseUrl = inferBaseUrl(req);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(
+      JSON.stringify(
+        {
+          message: 'GPT Car MCP server',
+          manifest: `${baseUrl}${MANIFEST_ROUTE}`,
+          mcpEndpoint: `${baseUrl}${MCP_ROUTE}`,
+        },
+        null,
+        2,
+      ),
+    );
+    return;
+  }
+
   if (req.method === 'GET' && (url.pathname === MANIFEST_ROUTE || url.pathname === ALT_MANIFEST_ROUTE)) {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(manifestResponder(), null, 2));
     return;
   }
 
-  if (url.pathname === MCP_ROUTE) {
-    if (req.method !== 'POST') {
-      res.writeHead(405, { Allow: 'POST', 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Only POST is supported for /mcp' }));
+  const isMcpRoute = url.pathname === MCP_ROUTE || (isRootPath && req.method === 'POST');
+
+  if (isMcpRoute) {
+    if (req.method === 'GET') {
+      if (!wantsEventStream || typeof transport.stream !== 'function') {
+        res.writeHead(405, { Allow: 'GET, POST', 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'GET is only supported for event-stream connections' }));
+        return;
+      }
+
+      await transport.stream(req, res);
       return;
     }
 
-    if (!req.headers['content-type'] || !req.headers['content-type'].includes('application/json')) {
+    if (req.method !== 'POST') {
+      res.writeHead(405, { Allow: 'GET, POST', 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Only POST and event-stream GET are supported for /mcp' }));
+      return;
+    }
+
+    const contentTypeHeader = req.headers['content-type'];
+    const contentTypes = Array.isArray(contentTypeHeader)
+      ? contentTypeHeader
+      : contentTypeHeader
+        ? [contentTypeHeader]
+        : [];
+    const hasJsonContentType = contentTypes.some((value) =>
+      typeof value === 'string' && value.toLowerCase().includes('application/json'),
+    );
+
+    if (!hasJsonContentType) {
       res.writeHead(400, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Expected application/json content type' }));
       return;
+    }
+
+    if (isRootPath) {
+      req.url = MCP_ROUTE;
     }
 
     try {
