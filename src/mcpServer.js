@@ -246,7 +246,17 @@ async function handleRequest(req, res, transport, manifestResponder) {
       return;
     }
 
-    if (!req.headers['content-type'] || !req.headers['content-type'].includes('application/json')) {
+    const contentTypeHeader = req.headers['content-type'];
+    const contentTypes = Array.isArray(contentTypeHeader)
+      ? contentTypeHeader
+      : contentTypeHeader
+        ? [contentTypeHeader]
+        : [];
+    const hasJsonContentType = contentTypes.some((value) =>
+      typeof value === 'string' && value.toLowerCase().includes('application/json'),
+    );
+
+    if (!hasJsonContentType) {
       res.writeHead(400, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Expected application/json content type' }));
       return;
