@@ -1,59 +1,51 @@
-# GPT Car MCP Server
 
-This project exposes a tiny Model Context Protocol (MCP) server that controls a four-pin GPIO motor driver. The server registers a single `drive` tool that ChatGPT (or any MCP-aware client) can call to move the car forward, backward, left, right, or stop.
+# GPT Car
+
+The following is a simple ChatGPT app written following the guideliness specified out  in https://developers.openai.com/apps-sdk.
+The project is a cool attempt to control a toy car using ChatGPT.
+More info on the motivation and background is covered in the blog post: 
+https://samselvanathan.com/posts/gpt-car/
+
+## Tech details
+
+This project exposes a tiny Model Context Protocol (MCP) server that controls a four-pin GPIO motor driver. The server registers a single `move_car` tool that ChatGPT (or any MCP-aware client) can call to move the car forward, backward, left, right, or stop or trun left, right.
 
 ## Key Points
 
-- **Zero build step** – plain JavaScript files run directly with Node.js.
-- **Minimal dependencies** – only relies on `@modelcontextprotocol/sdk` plus the optional `pigpio` GPIO helper.
-- **Raspberry Pi friendly** – avoids heavy native extensions and falls back to a noop GPIO driver when hardware access is unavailable.
+- The mcp server is written in Typescript using the mcp sdk and the additional resources for the chatgpt app mentioned in chatgpt apps sdk developer docs.
+- **Minimal dependencies** – only relies on `@modelcontextprotocol/sdk` `express` plus the optional `pigpio` GPIO helper.
+- **Raspberry Pi friendly** – avoids heavy native extensions. The Rapberry Pi that i am using is from 2013 :) so it is a very small tiny less powerful computer. Getting NodeJs to work was a nightmare and anything to install there was taking a long time. Node 18 was the max node version i was able to build
 
 ## Project Structure
 
 ```
-src/
-  gpio.js            // GPIO abstraction with pigpio + noop fallback
-  motorController.js // Motor controller logic (duration limits, validation)
-  mcpServer.js       // MCP server setup and tool registration
+/
+  car-controller/           // GPIO abstraction with pigpio and code to call car's motor controller using Rapsberry Pi
+  mcp-server/        // MCP server setup and tool registration
+  chatgpt-widget/       // a very very simple plain html client widget (ideally this should be written better with React)
 ```
 
 ## Prerequisites
 
 - Node.js **18.x** (lightweight enough for Raspberry Pi OS Bookworm).
 - npm 9 or newer.
-- Optional: Raspberry Pi or similar hardware with accessible GPIO pins.
+- Hardware: Raspberry Pi or similar hardware with accessible GPIO pins. along with L298N Motor DC Dual H-Bridge Motor Driver Controller Board
 
 ## Installation
 
 ```bash
-npm install
-# On Raspberry Pi, install pigpio for low-latency GPIO access (optional)
-npm install pigpio --omit=dev --no-save
+pnpm install 
 ```
 
 ## Running the Server
 
 ```bash
-npm start
+pnpm start
 ```
 
-The server listens on port `8001` (configurable via the `PORT` variable). Visit `http://<host>:<port>/.well-known/mcp/manifest.json` to retrieve the manifest, or point your MCP client directly at the `/mcp` endpoint.
+The server listens on port `3000` 
 
-## Environment Variables
 
-| Variable                  | Description                                      |
-|--------------------------|--------------------------------------------------|
-| `PORT`                   | HTTP port (default `8001`)                       |
-| `HOST`                   | Bind host (default `0.0.0.0`)                    |
-| `GPT_CAR_PIN_FORWARD`    | Override the BCM pin used for forward motion     |
-| `GPT_CAR_PIN_BACKWARD`   | Override the BCM pin used for backward motion    |
-| `GPT_CAR_PIN_LEFT`       | Override the BCM pin used for left turns         |
-| `GPT_CAR_PIN_RIGHT`      | Override the BCM pin used for right turns        |
-| `GPT_CAR_DRIVE_DURATION` | Default duration (seconds) for forward/backward  |
-| `GPT_CAR_TURN_DURATION`  | Default duration (seconds) for left/right turns  |
-| `GPT_CAR_MAX_DURATION`   | Maximum duration (seconds) allowed per command   |
-
-The server automatically caps tool input validation to the configured `GPT_CAR_MAX_DURATION` value.
 
 ## Raspberry Pi Notes
 
@@ -73,12 +65,6 @@ The server automatically caps tool input validation to the configured `GPT_CAR_M
 }
 ```
 
-## Troubleshooting
-
-- Ensure Node 18.x is active; older releases may miss required standard library features.
-- A startup warning such as `pigpio module not installed` means the high-performance backend was skipped; install it with `npm install pigpio --omit=dev --no-save` if you need real hardware control.
-- If you encounter permission errors on Raspberry Pi, run the process with access to GPIO (`sudo` or membership in the `gpio` group`).
-
-## License
-
-MIT
+## Commands
+- DANGEROUSLY_OMIT_AUTH=true npx @modelcontextprotocol/inspector
+- sudo shutdown -h now  // to shutdown rapberry pi safely

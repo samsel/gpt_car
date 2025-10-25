@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPT Car Dashboard</title>
+    <link
+    rel="stylesheet"
+    href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css"
+    >
+</head>
+<body>
+
+    <header>
+        <h1>GPT Car Dashboard</h1>
+        <blockquote>This is a hacky version of a dashboard that simply shows the different things happening between ChatGPT, MCP Server (that in turn drives the car via GPIO on Raspberry Pi)</blockquote>
+    </header>
+
+    <main>
+        <table>
+            <thead data-theme="light">
+                <tr>
+                    <th>Tool Call Inputs</th>
+                    <th>Tool Call Outputs</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td id="tool-input-cell" class="json-content">Loading...</td>
+                    <td id="tool-output-cell" class="json-content">Loading...</td>
+                </tr>
+            </tbody>
+        </table>
+    </main>
+
+    <footer>
+        <p><a href="https://github.com/samsel/gpt_car" target="_blank">link to source code</a></p>
+    </footer>
+
+    <script>
+        // 1. Helper: Safely format and pretty-print JSON data for display
+        function formatData(data) {
+            if (typeof data === 'object' && data !== null) {
+                return JSON.stringify(data, null, 2);
+            }
+            try {
+                const parsed = JSON.parse(data);
+                return JSON.stringify(parsed, null, 2);
+            } catch (e) {
+                return String(data);
+            }
+        }
+
+        // 2. Core Updater: Updates the specific table cell content
+        function updateCell(id, value) {
+            const cell = document.getElementById(id);
+            if (cell) {
+                cell.textContent = formatData(value);
+            }
+        }
+
+        // --- Proxy Implementation for Reactive Updates ---
+
+        // Ensure the global object exists with placeholder values
+        if (!window.openai) {
+            window.openai = { toolInput: 'N/A (Object not initialized)', toolOutput: 'N/A (Object not initialized)' };
+        }
+
+        // 3. Define the Proxy Handler (the 'set' trap)
+        const openaiHandler = {
+            set: function(target, property, value, receiver) {
+                // Check which property is being set and call the appropriate update function
+                if (property === 'toolInput') {
+                    updateCell('tool-input-cell', value);
+                } else if (property === 'toolOutput') {
+                    updateCell('tool-output-cell', value);
+                }
+
+                // Apply the change to the underlying object
+                return Reflect.set(target, property, value, receiver);
+            }
+        };
+
+        // 4. Create the Proxy and REASSIGN the global variable
+        window.openai = new Proxy(window.openai, openaiHandler);
+        
+        // 5. Initial Render: Display the current values on page load
+        updateCell('tool-input-cell', window.openai.toolInput);
+        updateCell('tool-output-cell', window.openai.toolOutput);
+        
+    </script>
+
+</body>
+</html>

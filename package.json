@@ -2,25 +2,40 @@
   "name": "gpt_car",
   "version": "1.0.0",
   "description": "Minimal MCP server for the GPT car controller.",
-  "main": "src/mcpServer.js",
+  "main": "dist/index.js",
   "type": "module",
   "scripts": {
-    "start": "node src/mcpServer.js"
+      "build": "tsc && chmod 755 build/index.js",
+      "dev": "npm run build && node build/index.js",
+      "start": "npm run build && node build/index.js"
   },
+   "bin": {
+      "create-mcp-server": "./build/index.js"
+  }, 
   "keywords": [
     "mcp",
     "motor",
     "controller"
   ],
-  "author": "",
+   "files": [
+    "build"
+  ], 
+  "author": "Sam Selvanathan <sjasel@gmail.com>",
   "license": "MIT",
   "engines": {
-    "node": ">=18.0.0"
+    "node": "^18.0.0"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.20.1"
+    "@modelcontextprotocol/sdk": "^1.20.2",
+    "express": "^5.1.0"
   },
   "optionalDependencies": {
     "pigpio": "^3.3.1"
-  }
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.4",
+    "@types/node": "^24.9.1",
+    "typescript": "^5.9.3"
+  }  
 }
+
