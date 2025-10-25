@@ -17,7 +17,7 @@ const BASE_RESOURCE_URI = "ui://widget/gpt_car.html"
 const RESOURCE_URL = `${BASE_RESOURCE_URI}?version=${VERSION}`
 
 
-const HTML_PATH = join(__dirname, "..", "..", "chatgpt-widget/index.html")
+const HTML_PATH = join(__dirname, "..", "chatgpt-widget/index.html")
 const HTML = readFileSync(HTML_PATH, "utf8")
 
 

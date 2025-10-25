@@ -1,20 +1,20 @@
 {
   "compilerOptions": {
     "target": "es2023",
-    "module": "node20",
+    "module": "NodeNext",
     "moduleResolution": "nodenext",
     "outDir": "./build",
-    "rootDir": "./src",
+    "rootDir": "./mcp-server",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
   "include": [
-    "src/**/*",
+    "mcp-server/**/*",
     "node_modules/@modelcontextprotocol"
   ],
   "exclude": [
     "node_modules"
-  ],
+  ]
 }
