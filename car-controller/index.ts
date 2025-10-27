@@ -1,4 +1,3 @@
-import GPIO from 'pigpio';
 import { isRaspberryPi } from "./utils/raspberrypi.js";
 
 export enum Direction {
@@ -28,21 +27,27 @@ const OpposingDirection: { [key in Direction]?: Direction } = {
     [Direction.RIGHT]: Direction.LEFT,
 };
 
+// This will store the pigpio module only if it's successfully imported
+let GPIO: any = null; 
+
 // Store initialized Gpio instances
 const motorPins: { [key in Direction]?: any } = {};
 
 // Store active timeouts to cancel them later
 const motorTimeouts: { [key in Direction]?: NodeJS.Timeout } = {};
 
-// Initialize all GPIO pins for the motors.
-// Set them to OUTPUT and ensures they are all OFF.
-function initializePins() {
+// Initializes all GPIO pins for the motors.
+// Sets them to OUTPUT and ensures they are all OFF.
+async function initializePins() {
     if (!isRaspberryPi()) {
         console.log("Not a Raspberry Pi. Skipping GPIO initialization.");
         return;
     }
 
     try {
+        // import pigpio ONLY on a Pi
+        GPIO = (await import('pigpio')).default;
+
         let initialized = false;
         for (const dir of Object.values(Direction)) {
             const pinNumber = DirectionGPIOPinMapping[dir];
@@ -64,13 +69,15 @@ function initializePins() {
 }
 
 // Run initialization when the module is loaded
+// This is a async call, but the code handles it correctly
+// because moveCar() will just simulate until motorPins is populated.
+// this type of initialization is common in hardware interfacing code and ok for this use case.
 initializePins();
 
-// Public functions
 export function moveCar(direction: Direction, duration?: number) {
     const motorPin = motorPins[direction];
 
-    // Fallback to simulation if this pin wasn't initialized
+    // Fallback to simulation if this pin wasn't initialized (or if GPIO is null)
     if (!motorPin) {
         console.log(`Simulated move car: ${direction} for ${duration ?? 'default'} seconds`);
         return;
@@ -116,7 +123,6 @@ export function moveCar(direction: Direction, duration?: number) {
     }, safeDuration * 1000);
 }
 
-// Helper function to stop a single motor and clear its timeout.
 function stopMotor(dir: Direction) {
     motorPins[dir]?.digitalWrite(0);
     if (motorTimeouts[dir]) {

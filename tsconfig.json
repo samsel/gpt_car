@@ -11,11 +11,11 @@
     "forceConsistentCasingInFileNames": true
   },
   "include": [
-    "./**/*",
-    "./chatgpt-widget/**/*",
+    "**/*.ts", 
     "node_modules/@modelcontextprotocol"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "build" 
   ]
 }
