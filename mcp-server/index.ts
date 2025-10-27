@@ -6,6 +6,7 @@ import { readFileSync } from "fs"
 import { join } from 'path'
 import { fileURLToPath } from 'url'
 import { dirname } from 'path'
+import { Direction, moveCar } from '../car-controller/index.js';
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -49,7 +50,7 @@ server.registerTool(
             "openai/widgetAccessible": true
         },
         inputSchema: {
-            direction: z.enum(["FORWARD", "BACKWARD", "LEFT", "RIGHT"], {
+            direction: z.nativeEnum(Direction, {
                 description: "The direction to move the car."
             }),
             duration: z.number({
@@ -63,10 +64,7 @@ server.registerTool(
 
     },
     async ({ direction, duration }) => {
-        // Simulate moving the car
-        console.log(`Moving car ${direction} for ${duration} seconds...`)
-        await new Promise(resolve => setTimeout(resolve, 1000))
-        console.log(`Car moved ${direction} for ${duration} seconds.`)
+        moveCar(direction, duration);
         
         const structuredOutput: StructuredOutput = StructuredOutput.parse({
             action: `MOVED_${direction}_FOR_${duration}_SECONDS`
